@@ -1,0 +1,132 @@
+From a9839964bdc6b9fb5a6dff2227e1cc2b3561b4e2 Mon Sep 17 00:00:00 2001
+From: Alexander Sokolov <sokoloff.a@gmail.com>
+Date: Sun, 25 May 2025 16:21:39 +0300
+Subject: [PATCH] Fix ld: 1 duplicate symbols error duplicate symbol
+ '_ff_init_half2float_tables' in: 
+ ffmpeg/sources/libswscale/libswscale.a[14](half2float.o) 
+ ffmpeg/sources/libavcodec/libavcodec.a[476](half2float.o) ld: 1 duplicate 
+ symbols clang: error: linker command failed with exit code 1 (use -v to see 
+ invocation)
+
+---
+ libavutil/half2float.c | 44 --------------------------------------
+ libavutil/half2float.h | 48 +++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 47 insertions(+), 45 deletions(-)
+
+diff --git a/libavutil/half2float.c b/libavutil/half2float.c
+index 4de2180..14319c1 100644
+--- a/libavutil/half2float.c
++++ b/libavutil/half2float.c
+@@ -18,50 +18,6 @@
+ 
+ #include "libavutil/half2float.h"
+ 
+-#if !HAVE_FAST_FLOAT16
+-static uint32_t convertmantissa(uint32_t i)
+-{
+-    int32_t m = i << 13; // Zero pad mantissa bits
+-    int32_t e = 0; // Zero exponent
+ 
+-    while (!(m & 0x00800000)) { // While not normalized
+-        e -= 0x00800000; // Decrement exponent (1<<23)
+-        m <<= 1; // Shift mantissa
+-    }
+ 
+-    m &= ~0x00800000; // Clear leading 1 bit
+-    e +=  0x38800000; // Adjust bias ((127-14)<<23)
+ 
+-    return m | e; // Return combined number
+-}
+-#endif
+-
+-void ff_init_half2float_tables(Half2FloatTables *t)
+-{
+-#if !HAVE_FAST_FLOAT16
+-    t->mantissatable[0] = 0;
+-    for (int i = 1; i < 1024; i++)
+-        t->mantissatable[i] = convertmantissa(i);
+-    for (int i = 1024; i < 2048; i++)
+-        t->mantissatable[i] = 0x38000000UL + ((i - 1024) << 13UL);
+-    for (int i = 2048; i < 3072; i++)
+-        t->mantissatable[i] = t->mantissatable[i - 1024] | 0x400000UL;
+-    t->mantissatable[2048] = t->mantissatable[1024];
+-
+-    t->exponenttable[0] = 0;
+-    for (int i = 1; i < 31; i++)
+-        t->exponenttable[i] = i << 23;
+-    for (int i = 33; i < 63; i++)
+-        t->exponenttable[i] = 0x80000000UL + ((i - 32) << 23UL);
+-    t->exponenttable[31]= 0x47800000UL;
+-    t->exponenttable[32]= 0x80000000UL;
+-    t->exponenttable[63]= 0xC7800000UL;
+-
+-    t->offsettable[0] = 0;
+-    for (int i = 1; i < 64; i++)
+-        t->offsettable[i] = 1024;
+-    t->offsettable[31] = 2048;
+-    t->offsettable[32] = 0;
+-    t->offsettable[63] = 2048;
+-#endif
+-}
+diff --git a/libavutil/half2float.h b/libavutil/half2float.h
+index dbd5e71..707076e 100644
+--- a/libavutil/half2float.h
++++ b/libavutil/half2float.h
+@@ -34,7 +34,53 @@ typedef struct Half2FloatTables {
+ #endif
+ } Half2FloatTables;
+ 
+-void ff_init_half2float_tables(Half2FloatTables *t);
++#if !HAVE_FAST_FLOAT16
++static uint32_t convertmantissa(uint32_t i)
++{
++    int32_t m = i << 13; // Zero pad mantissa bits
++    int32_t e = 0; // Zero exponent
++
++    while (!(m & 0x00800000)) { // While not normalized
++        e -= 0x00800000; // Decrement exponent (1<<23)
++        m <<= 1; // Shift mantissa
++    }
++
++    m &= ~0x00800000; // Clear leading 1 bit
++    e +=  0x38800000; // Adjust bias ((127-14)<<23)
++
++    return m | e; // Return combined number
++}
++#endif
++
++static void ff_init_half2float_tables(Half2FloatTables *t)
++{
++#if !HAVE_FAST_FLOAT16
++    t->mantissatable[0] = 0;
++    for (int i = 1; i < 1024; i++)
++        t->mantissatable[i] = convertmantissa(i);
++    for (int i = 1024; i < 2048; i++)
++        t->mantissatable[i] = 0x38000000UL + ((i - 1024) << 13UL);
++    for (int i = 2048; i < 3072; i++)
++        t->mantissatable[i] = t->mantissatable[i - 1024] | 0x400000UL;
++    t->mantissatable[2048] = t->mantissatable[1024];
++
++    t->exponenttable[0] = 0;
++    for (int i = 1; i < 31; i++)
++        t->exponenttable[i] = i << 23;
++    for (int i = 33; i < 63; i++)
++        t->exponenttable[i] = 0x80000000UL + ((i - 32) << 23UL);
++    t->exponenttable[31]= 0x47800000UL;
++    t->exponenttable[32]= 0x80000000UL;
++    t->exponenttable[63]= 0xC7800000UL;
++
++    t->offsettable[0] = 0;
++    for (int i = 1; i < 64; i++)
++        t->offsettable[i] = 1024;
++    t->offsettable[31] = 2048;
++    t->offsettable[32] = 0;
++    t->offsettable[63] = 2048;
++#endif
++}
+ 
+ static inline uint32_t half2float(uint16_t h, const Half2FloatTables *t)
+ {
+-- 
+2.45.2
+
